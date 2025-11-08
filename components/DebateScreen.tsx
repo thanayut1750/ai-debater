@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import type { Chat } from '@google/genai';
 import type { DebateTopic, Message, DebaterId, DebatingStyle } from '../types';
 import { DEBATERS, PERSONA_STYLES } from '../constants';
-import { createDebaterChat } from '../services/geminiService';
+import { createDebaterChat, generateDebateSummary } from '../services/geminiService';
 import ChatBubble from './ChatBubble';
 
 interface DebateScreenProps {
@@ -19,32 +19,103 @@ const TypingIndicator: React.FC = () => (
     </div>
 );
 
+const SummaryDisplay: React.FC<{ summary: { A: string; B: string } }> = ({ summary }) => (
+    <div className="mt-8 mb-4 p-6 bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-lg animate-fade-in">
+        <h3 className="font-orbitron text-2xl font-bold text-center mb-6 text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-500">
+            Debate Summary
+        </h3>
+        <div className="grid md:grid-cols-2 gap-6">
+            {(['A', 'B'] as const).map((debaterId) => {
+                const debater = DEBATERS[debaterId];
+                return (
+                    <div key={debaterId} className={`flex flex-col p-4 rounded-lg bg-gray-900/50 border-2 ${debaterId === 'A' ? 'border-blue-500/50' : 'border-purple-500/50'}`}>
+                        <div className="flex items-center space-x-3 mb-3">
+                            <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${debater.bubbleClassName.split(' ')[0]}`}>
+                                <debater.icon className="w-5 h-5 text-white" />
+                            </div>
+                            <h4 className={`font-bold text-lg ${debaterId === 'A' ? 'text-blue-400' : 'text-purple-400'}`}>{debater.name}'s Arguments</h4>
+                        </div>
+                        <p className="text-gray-300 text-sm leading-relaxed">{summary[debaterId]}</p>
+                    </div>
+                );
+            })}
+        </div>
+    </div>
+);
+
 
 const DebateScreen: React.FC<DebateScreenProps> = ({ topic, styles, onBack }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isDebating, setIsDebating] = useState(true);
-  const [isThinking, setIsThinking] = useState<DebaterId | null>('A');
+  const [isThinking, setIsThinking] = useState<DebaterId | null>(null);
+  const [summary, setSummary] = useState<{ A: string; B: string } | null>(null);
+  const [isSummarizing, setIsSummarizing] = useState(false);
   
   const chatA = useRef<Chat | null>(null);
   const chatB = useRef<Chat | null>(null);
-  const lastMessage = useRef<string>('');
-  const currentTurn = useRef<DebaterId>('A');
-  const debateLoopTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isDebatingRef = useRef(true);
+  const isMounted = useRef(true);
+  const debateEnded = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  useEffect(scrollToBottom, [messages]);
+  useEffect(scrollToBottom, [messages, summary, isSummarizing]);
+  
+  useEffect(() => {
+    isDebatingRef.current = isDebating;
+  }, [isDebating]);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
 
   const stopDebate = () => {
     setIsDebating(false);
-    setIsThinking(null);
-    if (debateLoopTimeout.current) {
-      clearTimeout(debateLoopTimeout.current);
-    }
   };
+  
+  useEffect(() => {
+    if (!isDebating && messages.length > 0 && !debateEnded.current) {
+        debateEnded.current = true;
+        
+        const createSummary = async () => {
+            if (!isMounted.current) return;
+            setIsSummarizing(true);
+            setSummary(null);
+
+            const transcript = messages
+                .map(msg => `${DEBATERS[msg.debaterId].name}: ${msg.text}`)
+                .join('\n');
+
+            try {
+                const summaryResult = await generateDebateSummary(transcript, DEBATERS.A.name, DEBATERS.B.name);
+                if (isMounted.current) {
+                    setSummary(summaryResult);
+                }
+            } catch (error) {
+                console.error("Failed to generate summary:", error);
+                 if (isMounted.current) {
+                    setSummary({
+                        A: 'Could not generate summary due to an error.',
+                        B: 'Could not generate summary due to an error.'
+                    });
+                }
+            } finally {
+                if (isMounted.current) {
+                    setIsSummarizing(false);
+                }
+            }
+        };
+
+        createSummary();
+    }
+  }, [isDebating, messages.length]);
+
 
   useEffect(() => {
     const personaA = PERSONA_STYLES[styles.A](DEBATERS.A.name, DEBATERS.B.name, 'in favor', topic.question);
@@ -53,50 +124,60 @@ const DebateScreen: React.FC<DebateScreenProps> = ({ topic, styles, onBack }) =>
     chatA.current = createDebaterChat(personaA);
     chatB.current = createDebaterChat(personaB);
     
-    lastMessage.current = `Let's begin the debate on: ${topic.question}. Please provide your opening statement in a concise and impactful manner.`;
-    currentTurn.current = 'A';
-    setMessages([]);
-    setIsThinking('A');
-    setIsDebating(true);
+    let currentTurn: DebaterId = 'A';
+    let lastMessage = `Let's begin the debate on: ${topic.question}. Please provide your opening statement in a concise and impactful manner.`;
     
-    const debateTurn = async () => {
-        if (!isDebating) return;
+    setMessages([]);
+    setSummary(null);
+    setIsSummarizing(false);
+    debateEnded.current = false;
+    setIsDebating(true);
+    isDebatingRef.current = true;
+    
+    const runDebateLoop = async () => {
+      while (isDebatingRef.current) {
+        if (!isMounted.current) return;
 
-        const currentChat = currentTurn.current === 'A' ? chatA.current : chatB.current;
-        const debaterId = currentTurn.current;
+        const currentChat = currentTurn === 'A' ? chatA.current : chatB.current;
+        const debaterId = currentTurn;
         
         setIsThinking(debaterId);
         
         try {
-            const result = await currentChat!.sendMessage({ message: lastMessage.current });
-            const newText = result.text;
+          const result = await currentChat!.sendMessage({ message: lastMessage });
+          
+          if (!isDebatingRef.current || !isMounted.current) break;
+          
+          const newText = result.text;
+          
+          await new Promise(resolve => setTimeout(resolve, 300));
+          
+          if (!isDebatingRef.current || !isMounted.current) break;
 
-            if (isDebating) {
-                setMessages(prev => [...prev, { id: `msg-${Date.now()}`, text: newText, debaterId }]);
-                lastMessage.current = newText;
-                currentTurn.current = currentTurn.current === 'A' ? 'B' : 'A';
-                
-                debateLoopTimeout.current = setTimeout(debateTurn, 1500);
-            }
+          setMessages(prev => [...prev, { id: `msg-${Date.now()}`, text: newText, debaterId }]);
+          lastMessage = newText;
+          
+          currentTurn = currentTurn === 'A' ? 'B' : 'A';
         } catch (error) {
-            console.error("Error during debate:", error);
-            setMessages(prev => [...prev, { id: 'error', text: 'An error occurred. The debate has ended.', debaterId: 'A' }]);
+          console.error("Error during debate turn:", error);
+          if (isMounted.current) {
+            setMessages(prev => [...prev, { id: 'error', text: 'An API error occurred. The debate has been paused.', debaterId: 'A' }]);
             stopDebate();
-        } finally {
-            if (isDebating) {
-                setIsThinking(currentTurn.current);
-            } else {
-                setIsThinking(null);
-            }
+          }
+          break;
         }
+      }
+      
+      if (isMounted.current) {
+        setIsThinking(null);
+      }
     };
     
-    debateLoopTimeout.current = setTimeout(debateTurn, 500);
+    runDebateLoop();
 
     return () => {
-      stopDebate();
+      isDebatingRef.current = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [topic, styles]);
   
   const ThinkingIcon = isThinking ? DEBATERS[isThinking].icon : null;
@@ -138,8 +219,16 @@ const DebateScreen: React.FC<DebateScreenProps> = ({ topic, styles, onBack }) =>
                         </div>
                     </div>
                 )}
-                <div ref={messagesEndRef} />
+                 <div ref={messagesEndRef} />
             </div>
+
+            {isSummarizing && (
+                <div className="text-center py-6">
+                    <p className="text-lg font-orbitron text-cyan-400 animate-pulse">Generating Summary...</p>
+                </div>
+            )}
+            {summary && <SummaryDisplay summary={summary} />}
+           
         </main>
     </div>
   );
