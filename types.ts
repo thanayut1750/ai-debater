@@ -1,4 +1,3 @@
-
 import type { ComponentType } from 'react';
 
 export interface DebateTopic {
@@ -15,11 +14,17 @@ export interface Message {
   debaterId: DebaterId;
 }
 
+export type DebatingStyle = 'Analytical' | 'Passionate' | 'Witty' | 'Philosophical';
+
+export interface DebatingStyleInfo {
+    name: DebatingStyle;
+    description: string;
+    emoji: string;
+}
+
 export interface Debater {
   id: DebaterId;
   name: string;
-  // FIX: Use ComponentType directly instead of React.ComponentType
   icon: ComponentType<{ className?: string }>;
   bubbleClassName: string;
-  persona: (topic: string) => string;
 }

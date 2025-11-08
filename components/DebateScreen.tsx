@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { Chat } from '@google/genai';
-import type { DebateTopic, Message, DebaterId } from '../types';
-import { DEBATERS } from '../constants';
+import type { DebateTopic, Message, DebaterId, DebatingStyle } from '../types';
+import { DEBATERS, PERSONA_STYLES } from '../constants';
 import { createDebaterChat } from '../services/geminiService';
 import ChatBubble from './ChatBubble';
 
 interface DebateScreenProps {
   topic: DebateTopic;
+  styles: { [key in DebaterId]: DebatingStyle };
   onBack: () => void;
 }
 
@@ -19,7 +20,7 @@ const TypingIndicator: React.FC = () => (
 );
 
 
-const DebateScreen: React.FC<DebateScreenProps> = ({ topic, onBack }) => {
+const DebateScreen: React.FC<DebateScreenProps> = ({ topic, styles, onBack }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isDebating, setIsDebating] = useState(true);
   const [isThinking, setIsThinking] = useState<DebaterId | null>('A');
@@ -28,7 +29,6 @@ const DebateScreen: React.FC<DebateScreenProps> = ({ topic, onBack }) => {
   const chatB = useRef<Chat | null>(null);
   const lastMessage = useRef<string>('');
   const currentTurn = useRef<DebaterId>('A');
-  // FIX: Replace NodeJS.Timeout with ReturnType<typeof setTimeout> for browser compatibility
   const debateLoopTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -47,8 +47,12 @@ const DebateScreen: React.FC<DebateScreenProps> = ({ topic, onBack }) => {
   };
 
   useEffect(() => {
-    chatA.current = createDebaterChat(DEBATERS.A.persona(topic.question));
-    chatB.current = createDebaterChat(DEBATERS.B.persona(topic.question));
+    const personaA = PERSONA_STYLES[styles.A](DEBATERS.A.name, DEBATERS.B.name, 'in favor', topic.question);
+    const personaB = PERSONA_STYLES[styles.B](DEBATERS.B.name, DEBATERS.A.name, 'against', topic.question);
+
+    chatA.current = createDebaterChat(personaA);
+    chatB.current = createDebaterChat(personaB);
+    
     lastMessage.current = `Let's begin the debate on: ${topic.question}. Please provide your opening statement in a concise and impactful manner.`;
     currentTurn.current = 'A';
     setMessages([]);
@@ -93,9 +97,8 @@ const DebateScreen: React.FC<DebateScreenProps> = ({ topic, onBack }) => {
       stopDebate();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [topic]);
+  }, [topic, styles]);
   
-  // FIX: Assign the icon component to a capitalized variable for JSX to render it correctly.
   const ThinkingIcon = isThinking ? DEBATERS[isThinking].icon : null;
 
   return (
