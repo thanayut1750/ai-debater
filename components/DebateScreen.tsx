@@ -11,6 +11,8 @@ interface DebateScreenProps {
   onBack: () => void;
 }
 
+const DEBATE_DURATION_SECONDS = 300; // 5 minutes
+
 const TypingIndicator: React.FC = () => (
     <div className="flex items-center space-x-1 p-3">
         <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse [animation-delay:-0.3s]"></div>
@@ -50,6 +52,7 @@ const DebateScreen: React.FC<DebateScreenProps> = ({ topic, styles, onBack }) =>
   const [isThinking, setIsThinking] = useState<DebaterId | null>(null);
   const [summary, setSummary] = useState<{ A: string; B: string } | null>(null);
   const [isSummarizing, setIsSummarizing] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(DEBATE_DURATION_SECONDS);
   
   const chatA = useRef<Chat | null>(null);
   const chatB = useRef<Chat | null>(null);
@@ -78,6 +81,22 @@ const DebateScreen: React.FC<DebateScreenProps> = ({ topic, styles, onBack }) =>
   const stopDebate = () => {
     setIsDebating(false);
   };
+
+  // Timer effect
+  useEffect(() => {
+    if (!isDebating || isSummarizing) return;
+
+    if (timeLeft <= 0) {
+      stopDebate();
+      return;
+    }
+
+    const timerId = setInterval(() => {
+      setTimeLeft(prevTime => prevTime - 1);
+    }, 1000);
+
+    return () => clearInterval(timerId);
+  }, [isDebating, timeLeft, isSummarizing]);
   
   useEffect(() => {
     if (!isDebating && messages.length > 0 && !debateEnded.current) {
@@ -127,12 +146,14 @@ const DebateScreen: React.FC<DebateScreenProps> = ({ topic, styles, onBack }) =>
     let currentTurn: DebaterId = 'A';
     let lastMessage = `Let's begin the debate on: ${topic.question}. Please provide your opening statement in a concise and impactful manner.`;
     
+    // Reset state for new debate
     setMessages([]);
     setSummary(null);
     setIsSummarizing(false);
     debateEnded.current = false;
     setIsDebating(true);
     isDebatingRef.current = true;
+    setTimeLeft(DEBATE_DURATION_SECONDS);
     
     const runDebateLoop = async () => {
       while (isDebatingRef.current) {
@@ -182,6 +203,18 @@ const DebateScreen: React.FC<DebateScreenProps> = ({ topic, styles, onBack }) =>
   
   const ThinkingIcon = isThinking ? DEBATERS[isThinking].icon : null;
 
+  const formatTime = (seconds: number) => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+  };
+
+  const getTimerColor = () => {
+    if (timeLeft <= 30) return 'text-red-500';
+    if (timeLeft <= 60) return 'text-yellow-400';
+    return 'text-gray-200';
+  };
+
   return (
     <div className="relative flex flex-col h-screen w-screen overflow-hidden bg-gray-900">
         <div className="absolute inset-0 bg-grid-gray-700/[0.2] bg-[length:20px_20px]"></div>
@@ -192,7 +225,10 @@ const DebateScreen: React.FC<DebateScreenProps> = ({ topic, styles, onBack }) =>
                 <button onClick={onBack} className="text-gray-400 hover:text-white transition-colors">&larr; Change Topic</button>
                 <div className="text-center">
                     <h2 className="font-orbitron text-lg font-bold text-gray-200">{topic.title}</h2>
-                    <p className="text-sm text-gray-400 max-w-md mx-auto">{topic.question}</p>
+                    <p className="text-sm text-gray-400 max-w-md mx-auto mb-2">{topic.question}</p>
+                    <div className={`font-orbitron text-2xl font-bold transition-colors duration-300 ${getTimerColor()}`}>
+                        {formatTime(timeLeft)}
+                    </div>
                 </div>
                 <button 
                     onClick={stopDebate} 
