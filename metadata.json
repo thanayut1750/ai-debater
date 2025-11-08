@@ -1,0 +1,5 @@
+{
+  "name": "Copy of AI Debate Arena",
+  "description": "A web application where two AI agents engage in a live debate on a user-selected topic. The user can watch the conversation unfold in real-time in an innovative split-screen chat interface and stop the debate at any time.",
+  "requestFramePermissions": []
+}
