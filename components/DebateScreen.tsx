@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { Chat } from '@google/genai';
-import type { DebateTopic, Message, DebaterId, DebatingStyle } from '../types';
-import { DEBATERS, PERSONA_STYLES } from '../constants';
+import type { DebateTopic, Message, DebaterId } from '../types';
+import { DEBATERS } from '../constants';
 import { createDebaterChat, generateDebateSummary } from '../services/geminiService';
 import ChatBubble from './ChatBubble';
 
 interface DebateScreenProps {
   topic: DebateTopic;
-  styles: { [key in DebaterId]: DebatingStyle };
+  personas: { [key in DebaterId]: string };
   onBack: () => void;
 }
 
@@ -46,7 +46,7 @@ const SummaryDisplay: React.FC<{ summary: { A: string; B: string } }> = ({ summa
 );
 
 
-const DebateScreen: React.FC<DebateScreenProps> = ({ topic, styles, onBack }) => {
+const DebateScreen: React.FC<DebateScreenProps> = ({ topic, personas, onBack }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isDebating, setIsDebating] = useState(false);
   const [isThinking, setIsThinking] = useState<DebaterId | null>(null);
@@ -143,7 +143,7 @@ const DebateScreen: React.FC<DebateScreenProps> = ({ topic, styles, onBack }) =>
     createSummary();
   }, [isDebating, messages.length, hasStarted]);
 
-  // Effect to reset state when the topic or styles change
+  // Effect to reset state when the topic or personas change
   useEffect(() => {
     setMessages([]);
     setSummary(null);
@@ -154,18 +154,15 @@ const DebateScreen: React.FC<DebateScreenProps> = ({ topic, styles, onBack }) =>
     isDebatingRef.current = false;
     setDuration(DEFAULT_DEBATE_DURATION_SECONDS);
     setTimeLeft(DEFAULT_DEBATE_DURATION_SECONDS);
-  }, [topic, styles]);
+  }, [topic, personas]);
 
 
   // Effect to run the debate loop once started
   useEffect(() => {
     if (!hasStarted) return;
 
-    const personaA = PERSONA_STYLES[styles.A](DEBATERS.A.name, DEBATERS.B.name, 'in favor', topic.question);
-    const personaB = PERSONA_STYLES[styles.B](DEBATERS.B.name, DEBATERS.A.name, 'against', topic.question);
-
-    chatA.current = createDebaterChat(personaA);
-    chatB.current = createDebaterChat(personaB);
+    chatA.current = createDebaterChat(personas.A);
+    chatB.current = createDebaterChat(personas.B);
     
     let currentTurn: DebaterId = 'A';
     let lastMessage = `Let's begin the debate on: ${topic.question}. Please provide your opening statement in a concise and impactful manner.`;
@@ -214,7 +211,7 @@ const DebateScreen: React.FC<DebateScreenProps> = ({ topic, styles, onBack }) =>
     return () => {
       isDebatingRef.current = false;
     };
-  }, [hasStarted, topic, styles]);
+  }, [hasStarted, topic, personas]);
   
   const ThinkingIcon = isThinking ? DEBATERS[isThinking].icon : null;
 

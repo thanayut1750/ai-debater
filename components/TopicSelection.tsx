@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import type { DebateTopic, DebatingStyle, DebatingStyleInfo, DebaterId } from '../types';
-import { DEBATE_TOPICS, DEBATERS, DEBATING_STYLES } from '../constants';
+import { DEBATE_TOPICS, DEBATERS, DEBATING_STYLES, generateSystemInstruction } from '../constants';
 
 interface TopicSelectionProps {
-  onTopicSelect: (topic: DebateTopic, styles: { [key in DebaterId]: DebatingStyle }) => void;
+  onTopicSelect: (topic: DebateTopic, personas: { [key in DebaterId]: string }) => void;
 }
 
 const TopicCard: React.FC<{ topic: DebateTopic; onClick: () => void }> = ({ topic, onClick }) => (
@@ -35,29 +35,60 @@ const StyleCard: React.FC<{ styleInfo: DebatingStyleInfo; isSelected: boolean; o
 
 const TopicSelection: React.FC<TopicSelectionProps> = ({ onTopicSelect }) => {
   const [customTopic, setCustomTopic] = useState('');
-  const [styles, setStyles] = useState<{ A: DebatingStyle; B: DebatingStyle }>({
+  
+  const [selectedStyles, setSelectedStyles] = useState<{ A: DebatingStyle | 'Custom'; B: DebatingStyle | 'Custom' }>({
     A: 'Analytical',
     B: 'Passionate',
   });
+  
+  const [personaDescriptions, setPersonaDescriptions] = useState<{ A: string; B: string }>({
+    A: DEBATING_STYLES.find(s => s.name === 'Analytical')?.description || '',
+    B: DEBATING_STYLES.find(s => s.name === 'Passionate')?.description || '',
+  });
 
-  const handleStyleSelect = (debaterId: DebaterId, style: DebatingStyle) => {
-    setStyles(prev => ({ ...prev, [debaterId]: style }));
+  const handleStyleSelect = (debaterId: DebaterId, style: DebatingStyleInfo) => {
+    setSelectedStyles(prev => ({ ...prev, [debaterId]: style.name }));
+    setPersonaDescriptions(prev => ({ ...prev, [debaterId]: style.description }));
+  };
+  
+  const handleDescriptionChange = (debaterId: DebaterId, description: string) => {
+    setPersonaDescriptions(prev => ({ ...prev, [debaterId]: description }));
+    setSelectedStyles(prev => ({ ...prev, [debaterId]: 'Custom' }));
+  };
+
+  const handleDebateStart = (topic: DebateTopic) => {
+    const personaA = generateSystemInstruction(
+      DEBATERS.A.name,
+      DEBATERS.B.name,
+      'in favor',
+      topic.question,
+      personaDescriptions.A || 'A neutral and objective debater.'
+    );
+    const personaB = generateSystemInstruction(
+      DEBATERS.B.name,
+      DEBATERS.A.name,
+      'against',
+      topic.question,
+      personaDescriptions.B || 'A neutral and objective debater.'
+    );
+    
+    onTopicSelect(topic, { A: personaA, B: personaB });
   };
 
   const handleCustomTopicSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const trimmedTopic = customTopic.trim();
     if (trimmedTopic) {
-        onTopicSelect({
+        handleDebateStart({
             title: 'Custom Topic',
             question: trimmedTopic,
             emoji: '💬',
-        }, styles);
+        });
     }
   };
 
   const handleTopicCardSelect = (topic: DebateTopic) => {
-    onTopicSelect(topic, styles);
+    handleDebateStart(topic);
   };
 
   return (
@@ -67,7 +98,7 @@ const TopicSelection: React.FC<TopicSelectionProps> = ({ onTopicSelect }) => {
           AI Debate Arena
         </h1>
         <p className="mt-4 text-lg text-gray-400 max-w-2xl mx-auto">
-          Witness two AIs debate a topic. Choose their personalities, then pick a topic or create your own.
+          Witness two AIs debate a topic. Customize their personalities, then pick a topic or create your own.
         </p>
       </div>
       
@@ -93,7 +124,7 @@ const TopicSelection: React.FC<TopicSelectionProps> = ({ onTopicSelect }) => {
         </div>
 
         <div className="mb-10">
-          <h2 className="text-center font-orbitron text-2xl font-bold mb-6 text-gray-300">Choose Debating Styles</h2>
+          <h2 className="text-center font-orbitron text-2xl font-bold mb-6 text-gray-300">Customize Debater Personas</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-12">
               <div>
                   <div className="flex items-center justify-center space-x-3 mb-4">
@@ -105,10 +136,24 @@ const TopicSelection: React.FC<TopicSelectionProps> = ({ onTopicSelect }) => {
                           <StyleCard 
                               key={style.name} 
                               styleInfo={style}
-                              isSelected={styles.A === style.name}
-                              onClick={() => handleStyleSelect('A', style.name)}
+                              isSelected={selectedStyles.A === style.name}
+                              onClick={() => handleStyleSelect('A', style)}
                           />
                       ))}
+                  </div>
+                  <div className="mt-4">
+                      <label htmlFor="persona-a-desc" className="block text-sm font-medium text-gray-400 mb-2">
+                          Or, describe their personality:
+                      </label>
+                      <textarea
+                          id="persona-a-desc"
+                          rows={3}
+                          className="w-full p-2 rounded-lg bg-gray-800/70 backdrop-blur-sm border-2 border-gray-700 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition-all duration-300"
+                          placeholder={`e.g., A cautious historian who references past events.`}
+                          value={personaDescriptions.A}
+                          onChange={(e) => handleDescriptionChange('A', e.target.value)}
+                          aria-label={`Custom personality for ${DEBATERS.A.name}`}
+                      />
                   </div>
               </div>
               <div>
@@ -121,10 +166,24 @@ const TopicSelection: React.FC<TopicSelectionProps> = ({ onTopicSelect }) => {
                           <StyleCard 
                               key={style.name} 
                               styleInfo={style}
-                              isSelected={styles.B === style.name}
-                              onClick={() => handleStyleSelect('B', style.name)}
+                              isSelected={selectedStyles.B === style.name}
+                              onClick={() => handleStyleSelect('B', style)}
                           />
                       ))}
+                  </div>
+                   <div className="mt-4">
+                      <label htmlFor="persona-b-desc" className="block text-sm font-medium text-gray-400 mb-2">
+                          Or, describe their personality:
+                      </label>
+                      <textarea
+                          id="persona-b-desc"
+                          rows={3}
+                          className="w-full p-2 rounded-lg bg-gray-800/70 backdrop-blur-sm border-2 border-gray-700 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-purple-400 transition-all duration-300"
+                          placeholder={`e.g., A futuristic optimist who focuses on potential.`}
+                          value={personaDescriptions.B}
+                          onChange={(e) => handleDescriptionChange('B', e.target.value)}
+                          aria-label={`Custom personality for ${DEBATERS.B.name}`}
+                      />
                   </div>
               </div>
           </div>

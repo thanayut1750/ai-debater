@@ -1,18 +1,18 @@
 import React, { useState } from 'react';
-import { DebateTopic, DebatingStyle, DebaterId } from './types';
+import { DebateTopic, DebaterId } from './types';
 import TopicSelection from './components/TopicSelection';
 import DebateScreen from './components/DebateScreen';
 
 export interface DebateConfig {
   topic: DebateTopic;
-  styles: { [key in DebaterId]: DebatingStyle };
+  personas: { [key in DebaterId]: string };
 }
 
 const App: React.FC = () => {
   const [debateConfig, setDebateConfig] = useState<DebateConfig | null>(null);
 
-  const handleTopicSelect = (topic: DebateTopic, styles: { [key in DebaterId]: DebatingStyle }) => {
-    setDebateConfig({ topic, styles });
+  const handleTopicSelect = (topic: DebateTopic, personas: { [key in DebaterId]: string }) => {
+    setDebateConfig({ topic, personas });
   };
 
   const handleBack = () => {
@@ -24,7 +24,7 @@ const App: React.FC = () => {
       {debateConfig ? (
         <DebateScreen 
           topic={debateConfig.topic} 
-          styles={debateConfig.styles}
+          personas={debateConfig.personas}
           onBack={handleBack} 
         />
       ) : (
